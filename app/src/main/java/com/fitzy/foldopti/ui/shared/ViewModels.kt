@@ -60,15 +60,23 @@ class HomeViewModel @Inject constructor(
 
     fun refreshCaps() { local.update { it.copy(caps = capsMgr.current(), headroom = thermal.headroom()) } }
 
+    private var job: kotlinx.coroutines.Job? = null
+
+    fun cancel() { job?.cancel() }
+
     fun smartClean() {
         if (local.value.busy) return
-        safeLaunch("home.smartClean", { m -> local.update { it.copy(busy = false, message = m) } }) {
-            local.update { it.copy(busy = true, message = null, caps = capsMgr.current()) }
-            val c = optimizer.cleanCaches()
-            val b = optimizer.safeBoost()
-            val lines = c.describe(::fmtBytes) + b.describe()
-            local.update { it.copy(busy = false, message = "Smart Clean finished\n" + lines.joinToString("\n")) }
-            runCatching { withContext(Dispatchers.Default) { scan.run() } }
+        job = safeLaunch("home.smartClean", { m -> local.update { it.copy(busy = false, message = m) } }) {
+            try {
+                local.update { it.copy(busy = true, message = null, caps = capsMgr.current()) }
+                val c = optimizer.cleanCaches()
+                val b = optimizer.safeBoost()
+                val lines = c.describe(::fmtBytes) + b.describe()
+                local.update { it.copy(busy = false, message = "Smart Clean finished\n" + lines.joinToString("\n")) }
+                runCatching { withContext(Dispatchers.Default) { scan.run() } }
+            } catch (c: kotlinx.coroutines.CancellationException) {
+                local.update { it.copy(busy = false, message = "Cancelled") }; throw c
+            }
         }
     }
 }
@@ -97,9 +105,12 @@ class OptimizeViewModel @Inject constructor(
             disabled = withContext(Dispatchers.IO) { dormancy.disabledApps() }, busy = false, loaded = true) }
     }
 
+    private var job: kotlinx.coroutines.Job? = null
+    fun cancel() { job?.cancel(); _ui.update { it.copy(busy = false, message = "Cancelled") } }
+
     fun clean(pkg: String? = null) {
         if (_ui.value.busy) return
-        safeLaunch("optimize.clean", ::err) {
+        job = safeLaunch("optimize.clean", ::err) {
             _ui.update { it.copy(busy = true, message = null) }
             val r = optimizer.cleanCaches(pkg?.let { listOf(it) })
             val lines = r.describe(::fmtBytes)
@@ -110,7 +121,7 @@ class OptimizeViewModel @Inject constructor(
 
     fun boost() {
         if (_ui.value.busy) return
-        safeLaunch("optimize.boost", ::err) {
+        job = safeLaunch("optimize.boost", ::err) {
             _ui.update { it.copy(busy = true, message = null) }
             val r = optimizer.safeBoost()
             _ui.update { it.copy(busy = false, message = "Safe Boost finished\n" + r.describe().joinToString("\n")) }
@@ -187,6 +198,7 @@ class SettingsViewModel @Inject constructor(
     fun accessibilityIntent() = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     fun notificationIntent() = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
+    suspend fun shizukuTest(): String = shell.selfTest(ctx.packageName).also { com.fitzy.foldopti.core.system.CrashLog.note("Shizuku test\n$it") }
     fun diagnostics(): String = com.fitzy.foldopti.core.system.CrashLog.read(ctx)
     fun clearDiagnostics() = com.fitzy.foldopti.core.system.CrashLog.clear(ctx)
 

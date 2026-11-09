@@ -62,6 +62,9 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
                 RowItem("Mode", tierText(c?.tier))
                 RowItem("Shizuku", when (c?.shizuku) { ShizukuState.READY -> "Connected"; ShizukuState.NO_PERMISSION -> "Running, permission needed"; ShizukuState.NOT_RUNNING -> "Not running"; else -> "Checking" },
                     trailing = { if (c?.shizuku == ShizukuState.NO_PERMISSION) SecondaryButton("Allow", vm::requestShizuku) })
+                var test by remember { mutableStateOf<String?>(null) }
+                SecondaryButton("Test Shizuku", { scope.launch { test = "Running"; test = vm.shizukuTest() } }, Modifier.fillMaxWidth(), enabled = c?.shizuku == ShizukuState.READY)
+                test?.let { Mono(it) }
                 RowItem("Accessibility", if (c?.accessibility == true) "On" else "Off, optional fallback", trailing = { SecondaryButton("Open", { ctx.startActivity(vm.accessibilityIntent()) }) })
                 RowItem("Usage access", if (c?.usageAccess == true) "On" else "Off", trailing = { if (c?.usageAccess != true) SecondaryButton("Open", { ctx.startActivity(vm.usageAccessIntent()) }) })
                 RowItem("Notifications", if (c?.notifications == true) "On" else "Off", trailing = { if (c?.notifications != true) SecondaryButton("Open", { ctx.startActivity(vm.notificationIntent()) }) })

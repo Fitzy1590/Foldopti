@@ -36,7 +36,7 @@ fun OptimizeScreen(wide: Boolean, vm: OptimizeViewModel = hiltViewModel()) {
         item { UsageHint(ui) }
         item { CachePanel(ui, vm::clean) }
         item { BoostPanel(vm::boost, ui.busy) }
-        if (ui.busy && progress != null) item { Panel { ProgressBlock(progress) } }
+        if (ui.busy && progress != null) item { Panel { ProgressBlock(progress, vm::cancel) } }
         ui.message?.let { m -> item { Panel { Muted(m) } } }
         item { SectionLabel("Developer tweaks") }
         items(ui.tweaks, key = { it.id }) { t ->

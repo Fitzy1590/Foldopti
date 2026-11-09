@@ -25,7 +25,7 @@ import javax.inject.Singleton
 
 data class AppCache(val pkg: String, val label: String, val cacheBytes: Long, val isProtected: Boolean)
 data class CleanResult(val clearedBytes: Long, val cleared: Int, val skipped: Int, val failed: Int, val tier: Tier, val note: String?, val firstError: String? = null)
-data class Progress(val label: String, val done: Int, val total: Int)
+data class Progress(val label: String, val done: Int, val total: Int, val detail: String = "")
 
 /** Plain-language lines for the UI. */
 fun CleanResult.describe(fmt: (Long) -> String): List<String> = buildList {
@@ -87,16 +87,21 @@ class OptimizerEngine @Inject constructor(
             when {
                 tier == Tier.T2 && Build.VERSION.SDK_INT >= 31 -> {
                     val done = java.util.concurrent.atomic.AtomicInteger(0); val ok = java.util.concurrent.atomic.AtomicInteger(0)
-                    val bytes = java.util.concurrent.atomic.AtomicLong(0); val firstErr = java.util.concurrent.atomic.AtomicReference<String?>(null)
+                    val failedLogged = java.util.concurrent.atomic.AtomicInteger(0); val bytes = java.util.concurrent.atomic.AtomicLong(0); val firstErr = java.util.concurrent.atomic.AtomicReference<String?>(null)
                     _progress.value = Progress("Clearing cache", 0, allowed.size)
-                    val sem = kotlinx.coroutines.sync.Semaphore(4)
+                    val sem = kotlinx.coroutines.sync.Semaphore(3)
                     kotlinx.coroutines.coroutineScope {
                         allowed.map { a -> async {
                             sem.withPermit {
+                                _progress.value = Progress("Clearing cache", done.get(), allowed.size, a.label)
                                 val r = if (guard.allows(a.pkg, CleanAction.CLEAR_CACHE)) shell.exec("pm", "clear", "--cache-only", a.pkg) else null
                                 if (r != null && r.ok && r.out.contains("Success", true)) { ok.incrementAndGet(); bytes.addAndGet(a.cacheBytes) }
-                                else firstErr.compareAndSet(null, (r?.err?.ifBlank { r.out } ?: "protected").trim().take(120))
-                                _progress.value = Progress("Clearing cache", done.incrementAndGet(), allowed.size)
+                                else {
+                                    val msg = (r?.err?.ifBlank { r.out } ?: "protected").trim().take(120)
+                                    firstErr.compareAndSet(null, msg)
+                                    if (failedLogged.incrementAndGet() <= 5) com.fitzy.foldopti.core.system.CrashLog.note("pm clear --cache-only ${a.pkg} failed (exit=${r?.code}): $msg")
+                                }
+                                _progress.value = Progress("Clearing cache", done.incrementAndGet(), allowed.size, a.label)
                             }
                         } }.awaitAll()
                     }
@@ -136,7 +141,7 @@ class OptimizerEngine @Inject constructor(
             val done = mutableListOf<String>(); val skipped = linkedMapOf<String, String>()
             val list = snap.running.toList()
             list.forEachIndexed { i, pkg ->
-                _progress.value = Progress("Restricting idle apps", i, list.size)
+                _progress.value = Progress("Restricting idle apps", i, list.size, pkg)
                 val ai = runCatching { pm.getApplicationInfo(pkg, 0) }.getOrNull() ?: return@forEachIndexed
                 val system = ai.flags and ApplicationInfo.FLAG_SYSTEM != 0 && ai.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP == 0
                 val d = BoostPolicy.decide(

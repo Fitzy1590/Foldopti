@@ -54,20 +54,40 @@ class ShizukuShell @Inject constructor() {
             .apply { isAccessible = true }
     }
 
-    suspend fun exec(vararg cmd: String, stdin: InputStream? = null, timeoutMs: Long = 20_000): ShellResult = withContext(Dispatchers.IO) {
+    /**
+     * Runs one command. Output is read on daemon threads and the caller polls, so a stuck process can never block
+     * the caller past [timeoutMs] and cancelling the coroutine destroys the process.
+     */
+    suspend fun exec(vararg cmd: String, stdin: InputStream? = null, timeoutMs: Long = 15_000): ShellResult = withContext(Dispatchers.IO) {
         if (!ready) return@withContext ShellResult(-1, "", "Shizuku not ready")
-        var proc: Process? = null
+        val p = try { newProcess.invoke(null, cmd, null, null) as Process } catch (t: Throwable) {
+            return@withContext ShellResult(-1, "", (t.cause ?: t).let { it.message ?: it.javaClass.simpleName })
+        }
+        val out = StringBuffer(); val err = StringBuffer()
+        fun reader(src: () -> InputStream, into: StringBuffer) = kotlin.concurrent.thread(isDaemon = true) {
+            runCatching { src().bufferedReader().use { r -> val b = CharArray(4096); while (true) { val n = r.read(b); if (n < 0) break; into.append(b, 0, n) } } }
+        }
+        val tOut = reader({ p.inputStream }, out); val tErr = reader({ p.errorStream }, err)
         try {
-            val p = newProcess.invoke(null, cmd, null, null) as Process
-            proc = p
-            coroutineScope {
-                val out = async { p.inputStream.bufferedReader().readText() }
-                val err = async { p.errorStream.bufferedReader().readText() }
-                if (stdin != null) p.outputStream.use { stdin.copyTo(it) } else p.outputStream.close()
-                if (!p.waitFor(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)) {
-                    p.destroy(); ShellResult(-2, "", "Timed out after ${timeoutMs / 1000}s: ${cmd.joinToString(" ")}")
-                } else ShellResult(p.exitValue(), out.await(), err.await())
+            runCatching { if (stdin != null) p.outputStream.use { stdin.copyTo(it) } else p.outputStream.close() }
+            val start = android.os.SystemClock.elapsedRealtime()
+            while (tOut.isAlive || tErr.isAlive) {
+                if (android.os.SystemClock.elapsedRealtime() - start > timeoutMs)
+                    return@withContext ShellResult(-2, out.toString(), "Timed out after ${timeoutMs / 1000}s: ${cmd.joinToString(" ")}")
+                kotlinx.coroutines.delay(30)
             }
-        } catch (t: Throwable) { runCatching { proc?.destroy() }; ShellResult(-1, "", t.message ?: t.javaClass.simpleName) }
+            ShellResult(runCatching { p.waitFor() }.getOrDefault(-1), out.toString(), err.toString())
+        } finally { runCatching { p.destroy() } }
+    }
+
+    /** Runs a few harmless commands and reports what happened and how long each took. */
+    suspend fun selfTest(ownPackage: String): String {
+        val sb = StringBuilder("Shizuku state: ${compute()}\n")
+        for (cmd in listOf(listOf("id"), listOf("getprop", "ro.build.version.sdk"), listOf("pm", "clear", "--cache-only", ownPackage))) {
+            val t0 = android.os.SystemClock.elapsedRealtime()
+            val r = exec(*cmd.toTypedArray(), timeoutMs = 10_000)
+            sb.append("${cmd.joinToString(" ")}\n  exit=${r.code}  ${android.os.SystemClock.elapsedRealtime() - t0} ms\n  out=${r.out.trim().take(160)}\n  err=${r.err.trim().take(160)}\n")
+        }
+        return sb.toString().trim()
     }
 }

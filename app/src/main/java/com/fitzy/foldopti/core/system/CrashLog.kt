@@ -41,6 +41,9 @@ object CrashLog {
         prefs.edit().putLong("last_exit_ts", exits.maxOf { it.timestamp }).apply()
     }
 
+    /** Plain diagnostic line (no stack trace). */
+    fun note(msg: String) { Log.w("FoldOpti", msg); val ctx = app ?: return; runCatching { val f = File(ctx.filesDir, FILE); f.writeText(((if (f.exists()) f.readText() else "") + "--- ${Date()}  NOTE  $msg\n").takeLast(MAX)) } }
+
     /** Non-fatal errors caught by the app. */
     fun record(where: String, e: Throwable) = write("ERROR", where, e)
 

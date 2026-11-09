@@ -78,10 +78,12 @@ fun ToggleRow(title: String, subtitle: String?, checked: Boolean, onChecked: (Bo
     RowItem(title, subtitle, trailing = { Switch(checked, onChecked) })
 
 @Composable
-fun ProgressBlock(p: com.fitzy.foldopti.core.optimizer.Progress?) {
+fun ProgressBlock(p: com.fitzy.foldopti.core.optimizer.Progress?, onCancel: (() -> Unit)? = null) {
     Column(verticalArrangement = Arrangement.spacedBy(Space.x2)) {
         if (p != null && p.total > 0) LinearProgressIndicator(progress = { p.done / p.total.toFloat() }, modifier = Modifier.fillMaxWidth())
         else LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         Mono(if (p == null) "Working" else if (p.total > 0) "${p.label}: ${p.done} of ${p.total}" else p.label)
+        p?.detail?.takeIf { it.isNotBlank() }?.let { Mono(it) }
+        onCancel?.let { TextButton(it) { Text("Cancel") } }
     }
 }

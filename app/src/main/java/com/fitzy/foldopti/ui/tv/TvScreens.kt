@@ -73,7 +73,7 @@ fun TvHome(vm: HomeViewModel = hiltViewModel()) {
                 TvStat("Cache", sum.cacheBytes?.let(::fmtBytes) ?: "n/a", if (sum.cacheBytes == null) "Usage access needed" else "unprotected apps", Modifier.weight(1f))
             }
             TvAction(if (s.busy) "Working" else "Clean now", Modifier.focusRequester(fr), enabled = !s.busy) { vm.smartClean() }
-            if (s.busy) TvMuted(s.progress?.let { if (it.total > 0) "${it.label}: ${it.done} of ${it.total}" else it.label } ?: "Working")
+            if (s.busy) TvMuted(s.progress?.let { (if (it.total > 0) "${it.label}: ${it.done} of ${it.total}" else it.label) + (if (it.detail.isNotBlank()) "  ${it.detail}" else "") } ?: "Working")
             s.message?.let { TvMuted(it) }
             TvMuted(when (s.caps?.tier) { Tier.T2 -> "Mode: full (Shizuku)"; else -> "Limited mode. Turn on Shizuku in Settings to clean and restrict apps." })
         }

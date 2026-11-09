@@ -50,7 +50,7 @@ fun HomeScreen(wide: Boolean, tabletop: Boolean, vm: HomeViewModel = hiltViewMod
                 Stat("Cache", sum.cacheBytes?.let(::fmtBytes) ?: "n/a", if (sum.cacheBytes == null) "Usage access needed" else "in unprotected apps", Modifier.weight(1f))
             }
             PrimaryButton("Smart Clean", vm::smartClean, Modifier.fillMaxWidth(), busy = s.busy)
-            if (s.busy) ProgressBlock(s.progress)
+            if (s.busy) ProgressBlock(s.progress, vm::cancel)
             s.message?.let { Panel { Muted(it) } }
             if (s.caps?.usageAccess == false) {
                 val ctx = androidx.compose.ui.platform.LocalContext.current
