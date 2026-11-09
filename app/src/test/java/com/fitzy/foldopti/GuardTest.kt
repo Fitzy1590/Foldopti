@@ -84,3 +84,14 @@ class SafetyPolicyTest {
         assertTrue("android.permission.BIND_QUICK_SETTINGS_TILE" in SafetyPolicy.bindingPermissions)
     }
 }
+
+class DisabledScannerTest {
+    @Test fun parsesQueryOpOutput() {
+        val out = "Packages:\n  com.a.b\n  com.not.installed\nUid mode: x\n  com.c.d\n"
+        assertEquals(listOf("com.a.b", "com.c.d"), DisabledScanner.parseQueryOp(out, setOf("com.a.b", "com.c.d")))
+    }
+    @Test fun flagsShadeRelatedPackages() {
+        assertTrue(DisabledScanner.isShadeRelated("com.android.systemui")); assertTrue(DisabledScanner.isShadeRelated("com.samsung.android.app.quickpanel"))
+        assertFalse(DisabledScanner.isShadeRelated("com.spotify.music"))
+    }
+}

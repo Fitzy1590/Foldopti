@@ -116,6 +116,8 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
                 }
             }
         }
+        item { SectionLabel("Troubleshooting") }
+        item { TroubleshootPanel() }
         item { SectionLabel("Diagnostics") }
         item {
             var log by remember { mutableStateOf(vm.diagnostics()) }

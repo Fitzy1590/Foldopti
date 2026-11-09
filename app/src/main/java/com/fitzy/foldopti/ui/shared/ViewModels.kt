@@ -235,3 +235,29 @@ class SettingsViewModel @Inject constructor(
     suspend fun exportWhitelist(): String = whitelist.exportJson(ui.value.whitelist)
     suspend fun importWhitelist(json: String): Int = whitelist.importJson(json)
 }
+
+data class TroubleshootUi(val report: DisabledReport? = null, val busy: Boolean = false, val message: String? = null)
+
+@HiltViewModel
+class TroubleshootViewModel @Inject constructor(private val scanner: DisabledScanner) : ViewModel() {
+    private val _ui = MutableStateFlow(TroubleshootUi())
+    val ui: StateFlow<TroubleshootUi> = _ui.asStateFlow()
+    private fun err(m: String) = _ui.update { it.copy(busy = false, message = m) }
+
+    fun scan() = safeLaunch("troubleshoot.scan", ::err) {
+        _ui.update { it.copy(busy = true, message = null) }
+        val r = scanner.scan()
+        _ui.update { it.copy(report = r, busy = false, message = if (r.disabled.isEmpty()) "No disabled apps found" else null) }
+    }
+    fun enable(pkg: String) = safeLaunch("troubleshoot.enable", ::err) {
+        val ok = scanner.enable(pkg)
+        _ui.update { it.copy(message = if (ok) "Enabled $pkg. Restart the phone if the panel is still missing." else "Could not enable. Start Shizuku, or use Open settings.") }
+        if (ok) scan()
+    }
+    fun resetBackground(pkg: String) = safeLaunch("troubleshoot.reset", ::err) {
+        val ok = scanner.resetBackground(pkg)
+        _ui.update { it.copy(message = if (ok) "Background run reset for $pkg" else "Could not reset. Is Shizuku running?") }
+        if (ok) scan()
+    }
+    fun appInfoIntent(pkg: String) = scanner.appInfoIntent(pkg)
+}
