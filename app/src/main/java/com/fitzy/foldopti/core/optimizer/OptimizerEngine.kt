@@ -109,6 +109,7 @@ class OptimizerEngine @Inject constructor(
                             }
                         } }.awaitAll()
                     }
+                    com.fitzy.foldopti.core.system.CrashLog.note("AUDIT cache cleared (${ok.get()}/${allowed.size}): ${allowed.take(60).joinToString { it.pkg }}")
                     return CleanResult(bytes.get(), ok.get(), skipped, allowed.size - ok.get(), tier, null, firstErr.get())
                 }
                 tier == Tier.T2 -> return CleanResult(0, 0, skipped, 0, tier, "Silent cache clearing needs Android 12 or newer. Use the accessibility option or clear from system settings.")
@@ -162,6 +163,7 @@ class OptimizerEngine @Inject constructor(
                 if (!d.allow) { skipped[pkg] = d.reason; return@forEachIndexed }
                 if (restrictInternal(pkg)) { done += pkg; stopLog.record(pkg, now) }
             }
+            com.fitzy.foldopti.core.system.CrashLog.note("AUDIT restricted ${done.size}: ${done.joinToString()}")
             return BoostResult(done, skipped, if (snap.running.isEmpty()) "Couldn't read the running app list from Shizuku" else null)
         } catch (t: kotlinx.coroutines.CancellationException) { throw t
         } catch (t: Throwable) {
@@ -198,6 +200,7 @@ class OptimizerEngine @Inject constructor(
             shell.exec("am", "set-standby-bucket", pkg, "active")
             if (a.ok) n++
         }
+        com.fitzy.foldopti.core.system.CrashLog.note("AUDIT undo reverted $n: ${stopLog.allPackages().joinToString()}")
         stopLog.clear(); return n
     }
 

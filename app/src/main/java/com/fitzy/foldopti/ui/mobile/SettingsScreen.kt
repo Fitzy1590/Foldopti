@@ -131,6 +131,15 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
                 }
             }
         }
+        item {
+            var qs by remember { mutableStateOf<String?>(null) }
+            Panel {
+                Text("Quick Settings test", style = MaterialTheme.typography.titleMedium)
+                Muted("Asks the system to open Quick Settings through Shizuku. Use it to tell a missing panel from a missing swipe gesture.")
+                SecondaryButton("Open Quick Settings", { scope.launch { qs = vm.openQuickSettings() } }, Modifier.fillMaxWidth(), enabled = c?.shizuku == ShizukuState.READY)
+                qs?.let { Muted(it) }
+            }
+        }
         item { SectionLabel("About") }
         item { Panel { Muted(LICENSES) } }
     }

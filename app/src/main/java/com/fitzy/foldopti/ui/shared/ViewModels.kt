@@ -204,6 +204,12 @@ class SettingsViewModel @Inject constructor(
     fun notificationIntent() = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
     suspend fun shizukuTest(): String = shell.selfTest(ctx.packageName).also { com.fitzy.foldopti.core.system.CrashLog.note("Shizuku test\n$it") }
+    suspend fun openQuickSettings(): String {
+        val r = shell.exec("cmd", "statusbar", "expand-settings")
+        return if (r.ok) "Sent. If Quick Settings did not appear, the panel itself is unavailable (SystemUI), not just the swipe gesture."
+        else "Command failed: ${(r.err.ifBlank { r.out }).trim().take(160)}"
+    }
+    suspend fun closeQuickSettings() { shell.exec("cmd", "statusbar", "collapse") }
     fun diagnostics(): String = com.fitzy.foldopti.core.system.CrashLog.read(ctx)
     fun clearDiagnostics() = com.fitzy.foldopti.core.system.CrashLog.clear(ctx)
 
