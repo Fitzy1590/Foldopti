@@ -18,6 +18,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -54,7 +55,11 @@ class OptimizerEngine @Inject constructor(
     private val stopLog: StopLog,
     private val access: Access,
     private val accessibility: AccessibilityBridge,
+    private val settings: com.fitzy.foldopti.core.settings.SettingsStore,
 ) {
+    /** One clean or boost at a time, so repeated taps or alert buttons can never stack heavy system work. */
+    private val lock = kotlinx.coroutines.sync.Mutex()
+
     private val pm get() = ctx.packageManager
     private val _progress = kotlinx.coroutines.flow.MutableStateFlow<Progress?>(null)
     /** Live progress of the running clean or boost, null when idle. */
@@ -80,6 +85,7 @@ class OptimizerEngine @Inject constructor(
     /** Clears cache only (never user data). T2: `pm clear --cache-only` (API 31+), four at a time. T1: accessibility, foreground only. */
     suspend fun cleanCaches(only: Collection<String>? = null): CleanResult {
         val tier = caps.current().tier
+        if (!lock.tryLock()) return CleanResult(0, 0, 0, 0, tier, "Another clean is already running")
         try {
             _progress.value = Progress("Measuring cache", 0, 0)
             val all = measureCache()
@@ -89,28 +95,27 @@ class OptimizerEngine @Inject constructor(
             if (allowed.isEmpty()) return CleanResult(0, 0, skipped, 0, tier,
                 if (!access.hasUsageAccess()) "Usage access is off, so cache size can't be measured. Turn it on in Settings." else "No cache worth clearing")
             when {
+                tier == Tier.T2 && Build.VERSION.SDK_INT >= 31 && !settings.current().experimentalCacheClear ->
+                    return CleanResult(0, 0, skipped, 0, tier, "Silent cache clearing is switched off because it is experimental. Turn it on in Settings > Experimental, or clear caches from system Settings > Apps.")
                 tier == Tier.T2 && Build.VERSION.SDK_INT >= 31 -> {
-                    val done = java.util.concurrent.atomic.AtomicInteger(0); val ok = java.util.concurrent.atomic.AtomicInteger(0)
-                    val failedLogged = java.util.concurrent.atomic.AtomicInteger(0); val bytes = java.util.concurrent.atomic.AtomicLong(0); val firstErr = java.util.concurrent.atomic.AtomicReference<String?>(null)
-                    _progress.value = Progress("Clearing cache", 0, allowed.size)
-                    val sem = kotlinx.coroutines.sync.Semaphore(1)
-                    kotlinx.coroutines.coroutineScope {
-                        allowed.map { a -> async {
-                            sem.withPermit {
-                                _progress.value = Progress("Clearing cache", done.get(), allowed.size, a.label)
-                                val r = if (guard.allows(a.pkg, CleanAction.CLEAR_CACHE)) shell.exec("pm", "clear", "--cache-only", a.pkg) else null
-                                if (r != null && r.ok && r.out.contains("Success", true)) { ok.incrementAndGet(); bytes.addAndGet(a.cacheBytes) }
-                                else {
-                                    val msg = (r?.err?.ifBlank { r.out } ?: "protected").trim().take(120)
-                                    firstErr.compareAndSet(null, msg)
-                                    if (failedLogged.incrementAndGet() <= 5) com.fitzy.foldopti.core.system.CrashLog.note("pm clear --cache-only ${a.pkg} failed (exit=${r?.code}): $msg")
-                                }
-                                _progress.value = Progress("Clearing cache", done.incrementAndGet(), allowed.size, a.label)
-                            }
-                        } }.awaitAll()
+                    // Smallest first, one at a time. Stop at the first command that does not finish: heavy deletes can stall the system.
+                    val order = allowed.reversed()
+                    var ok = 0; var bytes = 0L; var failed = 0; var firstErr: String? = null; var stopped: String? = null
+                    for ((i, a) in order.withIndex()) {
+                        kotlin.coroutines.coroutineContext.ensureActive()
+                        _progress.value = Progress("Clearing cache", i, order.size, a.label)
+                        val r = if (guard.allows(a.pkg, CleanAction.CLEAR_CACHE)) shell.exec("pm", "clear", "--cache-only", a.pkg, timeoutMs = 60_000) else null
+                        if (r != null && r.ok && r.out.contains("Success", true)) { ok++; bytes += a.cacheBytes }
+                        else {
+                            failed++
+                            val msg = (r?.err?.ifBlank { r.out } ?: "protected").trim().take(120)
+                            if (firstErr == null) firstErr = msg
+                            if (failed <= 5) com.fitzy.foldopti.core.system.CrashLog.note("pm clear --cache-only ${a.pkg} failed (exit=${r?.code}): $msg")
+                            if (r?.code == -2) { stopped = "Stopped: ${a.label} did not finish in 60 seconds. Stopping avoids overloading the system."; break }
+                        }
                     }
-                    com.fitzy.foldopti.core.system.CrashLog.note("AUDIT cache cleared (${ok.get()}/${allowed.size}): ${allowed.take(60).joinToString { it.pkg }}")
-                    return CleanResult(bytes.get(), ok.get(), skipped, allowed.size - ok.get(), tier, null, firstErr.get())
+                    com.fitzy.foldopti.core.system.CrashLog.note("AUDIT cache cleared ($ok of ${order.size}): ${order.take(ok + failed).joinToString { it.pkg }}")
+                    return CleanResult(bytes, ok, skipped, failed, tier, stopped, firstErr)
                 }
                 tier == Tier.T2 -> return CleanResult(0, 0, skipped, 0, tier, "Silent cache clearing needs Android 12 or newer. Use the accessibility option or clear from system settings.")
                 tier == Tier.T1 -> {
@@ -126,7 +131,7 @@ class OptimizerEngine @Inject constructor(
         } catch (t: Throwable) {
             com.fitzy.foldopti.core.system.CrashLog.record("cleanCaches", t)
             return CleanResult(0, 0, 0, 0, tier, "Clean stopped: ${t.message ?: t.javaClass.simpleName}")
-        } finally { _progress.value = null }
+        } finally { _progress.value = null; lock.unlock() }
     }
 
     private fun hasLauncher(pkg: String) = pm.getLaunchIntentForPackage(pkg) != null || pm.getLeanbackLaunchIntentForPackage(pkg) != null
@@ -146,6 +151,7 @@ class OptimizerEngine @Inject constructor(
     /** Restricts idle background apps (standby bucket + background run). Does not force-stop, so nothing restarts in a loop. */
     suspend fun safeBoost(): BoostResult {
         if (caps.current().tier != Tier.T2) return BoostResult(emptyList(), emptyMap(), "Safe Boost needs Shizuku. In limited mode FoldOpti can only measure and alert.")
+        if (!lock.tryLock()) return BoostResult(emptyList(), emptyMap(), "Another clean is already running")
         try {
             _progress.value = Progress("Checking running apps", 0, 0)
             val snap = probe.snapshot()
@@ -169,7 +175,7 @@ class OptimizerEngine @Inject constructor(
         } catch (t: Throwable) {
             com.fitzy.foldopti.core.system.CrashLog.record("safeBoost", t)
             return BoostResult(emptyList(), emptyMap(), "Boost stopped: ${t.message ?: t.javaClass.simpleName}")
-        } finally { _progress.value = null }
+        } finally { _progress.value = null; lock.unlock() }
     }
 
     private suspend fun restrictInternal(pkg: String): Boolean {

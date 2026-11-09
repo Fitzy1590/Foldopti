@@ -116,6 +116,12 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
                 }
             }
         }
+        item { SectionLabel("Experimental") }
+        item {
+            Panel {
+                ToggleRow("Clear cache with Shizuku", "Runs pm clear --cache-only one app at a time. On some phones this stalls for large caches. Off by default.", s.experimentalCacheClear, vm::setExperimentalCache)
+            }
+        }
         item { SectionLabel("Troubleshooting") }
         item { TroubleshootPanel() }
         item { SectionLabel("Diagnostics") }

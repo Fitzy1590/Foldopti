@@ -70,8 +70,7 @@ class HomeViewModel @Inject constructor(
             try {
                 local.update { it.copy(busy = true, message = null, caps = capsMgr.current()) }
                 val c = optimizer.cleanCaches()
-                val b = optimizer.safeBoost()
-                val lines = c.describe(::fmtBytes) + b.describe()
+                val lines = c.describe(::fmtBytes)
                 local.update { it.copy(busy = false, message = "Smart Clean finished\n" + lines.joinToString("\n")) }
                 runCatching { withContext(Dispatchers.Default) { scan.run() } }
             } catch (c: kotlinx.coroutines.CancellationException) {
@@ -204,6 +203,7 @@ class SettingsViewModel @Inject constructor(
     fun setQuiet(v: Boolean) = viewModelScope.launch { store.setQuiet(v) }
     fun setRam(v: Int) = viewModelScope.launch { store.setRamThreshold(v) }
     fun setCacheMb(v: Int) = viewModelScope.launch { store.setCacheThresholdMb(v) }
+    fun setExperimentalCache(v: Boolean) = viewModelScope.launch { store.setExperimentalCacheClear(v) }
     fun setLive(v: Boolean) = viewModelScope.launch { store.setLiveMonitor(v); if (v) MonitorService.start(ctx) else MonitorService.stop(ctx) }
 
     fun requestShizuku() = shell.requestPermission()

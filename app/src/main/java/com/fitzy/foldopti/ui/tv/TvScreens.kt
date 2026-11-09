@@ -193,6 +193,8 @@ fun TvSettings(vm: SettingsViewModel = hiltViewModel()) {
         item { TvRow("Add app", "Protected apps are never cleaned, restricted, disabled or uninstalled") { scope.launch { picker = vm.installedApps() } } }
         items(ui.suggestions.entries.toList(), key = { "s" + it.key }) { (pkg, why) -> TvRow(pkg, "Suggested: $why", "Protect") { vm.addToWhitelist(pkg, why) } }
         items(ui.whitelist, key = { it.pkg }) { a -> TvRow(a.pkg, a.reason, if (a.source == ProtectedSource.DEFAULT) "Default" else "Remove") { if (a.source != ProtectedSource.DEFAULT) vm.removeFromWhitelist(a) } }
+        item { TvSection("Experimental") }
+        item { TvRow("Clear cache with Shizuku", if (s.experimentalCacheClear) "On" else "Off. Select to change") { vm.setExperimentalCache(!s.experimentalCacheClear) } }
         item { TvSection("Updates") }
         item { TvRow("Version", ui.version) {} }
         item { TvRow("Check automatically", if (s.autoUpdate) "On" else "Off") { vm.setAutoUpdate(!s.autoUpdate) } }

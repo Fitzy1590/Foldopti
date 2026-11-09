@@ -121,9 +121,9 @@ private fun CachePanel(ui: OptimizeUi, clean: (String?) -> Unit) {
 private fun BoostPanel(boost: () -> Unit, busy: Boolean, undo: () -> Unit) {
     Panel {
         Text("Safe Boost", style = MaterialTheme.typography.titleMedium)
-        Muted("Limits idle background apps. It skips media players, services in use, your keyboard and launcher, and protected apps. Nothing is force-stopped.")
+        Muted("Experimental and not yet tested on a device. Limits idle background apps. It skips media players, services in use, your keyboard and launcher, and protected apps. Nothing is force-stopped.")
         Muted("Only ordinary apps you installed are limited, at most 15 per run. System, Samsung and Google services are never touched.")
-        SecondaryButton("Run Safe Boost", boost, Modifier.fillMaxWidth(), enabled = !busy)
+        SecondaryButton("Run Safe Boost (experimental)", boost, Modifier.fillMaxWidth(), enabled = !busy)
         SecondaryButton("Undo Safe Boost", undo, Modifier.fillMaxWidth(), enabled = !busy)
     }
 }

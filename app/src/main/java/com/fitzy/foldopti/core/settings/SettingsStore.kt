@@ -25,6 +25,7 @@ data class AppSettings(
     val liveMonitor: Boolean = false,
     val seeded: Boolean = false,
     val lastScanAt: Long = 0L,
+    val experimentalCacheClear: Boolean = false,
 )
 
 @Singleton
@@ -42,6 +43,7 @@ class SettingsStore @Inject constructor(@ApplicationContext private val ctx: Con
         val live = booleanPreferencesKey("live")
         val seeded = booleanPreferencesKey("seeded")
         val lastScan = longPreferencesKey("last_scan")
+        val expCache = booleanPreferencesKey("exp_cache")
         val snoozes = stringSetPreferencesKey("snoozes")
         val never = stringSetPreferencesKey("never_alert")
     }
@@ -54,7 +56,7 @@ class SettingsStore @Inject constructor(@ApplicationContext private val ctx: Con
             quietEnabled = p[K.quiet] ?: d.quietEnabled, quietStartMin = p[K.quietStart] ?: d.quietStartMin,
             quietEndMin = p[K.quietEnd] ?: d.quietEndMin, ramThresholdPct = p[K.ram] ?: d.ramThresholdPct,
             cacheThresholdMb = p[K.cache] ?: d.cacheThresholdMb, liveMonitor = p[K.live] ?: false,
-            seeded = p[K.seeded] ?: false, lastScanAt = p[K.lastScan] ?: 0L,
+            seeded = p[K.seeded] ?: false, lastScanAt = p[K.lastScan] ?: 0L, experimentalCacheClear = p[K.expCache] ?: false,
         )
     }
 
@@ -72,6 +74,7 @@ class SettingsStore @Inject constructor(@ApplicationContext private val ctx: Con
     suspend fun setLiveMonitor(v: Boolean) = set(K.live, v)
     suspend fun setSeeded(v: Boolean) = set(K.seeded, v)
     suspend fun setLastScan(v: Long) = set(K.lastScan, v)
+    suspend fun setExperimentalCacheClear(v: Boolean) = set(K.expCache, v)
 
     /** Snoozes are stored as "key|untilMillis"; keys are an alert type name or "pkg:<package>". */
     suspend fun snooze(key: String, until: Long) {

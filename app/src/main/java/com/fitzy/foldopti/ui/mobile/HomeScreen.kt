@@ -75,7 +75,7 @@ fun HomeScreen(wide: Boolean, tabletop: Boolean, vm: HomeViewModel = hiltViewMod
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(Space.x6), verticalArrangement = Arrangement.spacedBy(Space.x5)) {
         Title("Home")
         if (confirm) AlertDialog(onDismissRequest = { confirm = false }, title = { Text("Run Smart Clean?") },
-            text = { Text("Clears cache for ordinary apps and limits background activity for up to 15 idle apps you installed. System, Samsung and Google services, media players and protected apps are never touched. You can undo the restrictions from Optimize.") },
+            text = { Text("Clears the cache of ordinary apps you installed, one at a time, and stops if anything stalls. System apps and protected apps are never touched. Silent clearing is experimental and must be switched on in Settings.") },
             confirmButton = { TextButton({ confirm = false; vm.smartClean() }) { Text("Run") } }, dismissButton = { TextButton({ confirm = false }) { Text("Cancel") } })
         when {
             tabletop -> Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.x8)) { gauge(); actions() }

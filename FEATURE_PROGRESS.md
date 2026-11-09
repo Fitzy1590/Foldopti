@@ -71,6 +71,11 @@ v1.0.0 code complete on branch `ccr-4c4a9111-lmn2f5`. 21 unit tests, lint and R8
 - Fix: `SafetyPolicy` limits both engines to launcher-visible, ordinary apps; excludes OS/OEM prefixes and any app exposing a bound system service; caps 15 restrictions and 60 cache clears per run; one command at a time; confirm dialog before Smart Clean; Optimize > Undo Safe Boost reverts everything FoldOpti restricted.
 - Rule going forward: no feature may act on a package without passing `SafetyPolicy` and `WhitelistGuard`.
 
+## 1.0.8 (from device diagnostics)
+- Diagnostics showed no FoldOpti crash or ANR. Exits were installs only. Every `pm clear --cache-only` on large caches (Chrome, Facebook, Pocket Casts, Instagram) timed out at 15 s and was repeated across several runs, so heavy deletes were stacking up in the system. Undo found 0 recorded restrictions, so Safe Boost never ran.
+- Changes: Shizuku cache clearing is now an opt-in Experimental setting (off by default), runs smallest first, one at a time, 60 s timeout, and stops at the first stall; one clean or boost at a time (mutex); Smart Clean is cache-only; Safe Boost is a separate button labelled experimental.
+- The missing Quick Settings panel is not explained by anything FoldOpti logged. Treat as a device issue until shown otherwise.
+
 ## Open items
 - Device pass (Stage 11): every [~] row above. Hidden-behavior risks: `pm clear --cache-only` (Android 12+ only, so unavailable on Shield Android 11), `dumpsys` parsers on Samsung/Shield builds, accessibility labels (English only), Samsung Device care package name, Shizuku `newProcess` reflection.
 - `assets/publishers.json` is empty (cert-mismatch rule inactive) and `signatures.bin` holds only the EICAR test hash. A real signature feed and key (`SIGNATURE_PUBKEY_B64`) are needed for 7c/7d to be useful.
