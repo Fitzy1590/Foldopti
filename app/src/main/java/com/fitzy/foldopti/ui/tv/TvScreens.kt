@@ -73,6 +73,7 @@ fun TvHome(vm: HomeViewModel = hiltViewModel()) {
                 TvStat("Cache", sum.cacheBytes?.let(::fmtBytes) ?: "n/a", if (sum.cacheBytes == null) "Usage access needed" else "unprotected apps", Modifier.weight(1f))
             }
             TvAction(if (s.busy) "Working" else "Clean now", Modifier.focusRequester(fr), enabled = !s.busy) { vm.smartClean() }
+            if (s.busy) TvMuted(s.progress?.let { if (it.total > 0) "${it.label}: ${it.done} of ${it.total}" else it.label } ?: "Working")
             s.message?.let { TvMuted(it) }
             TvMuted(when (s.caps?.tier) { Tier.T2 -> "Mode: full (Shizuku)"; else -> "Limited mode. Turn on Shizuku in Settings to clean and restrict apps." })
         }
@@ -85,6 +86,7 @@ fun TvClean(vm: OptimizeViewModel = hiltViewModel()) {
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { vm.load() }
     val fr = remember { FocusRequester() }
     val total = ui.caches.filter { !it.isProtected }.sumOf { it.cacheBytes }
+    val progress by vm.progress.collectAsStateWithLifecycle()
     LazyColumn(Modifier.fillMaxSize().focusRestorer { fr }, verticalArrangement = Arrangement.spacedBy(Space.x3)) {
         item { TvTitle("Clean") }
         item { TvMuted("${fmtBytes(total)} of cache in ${ui.caches.count { !it.isProtected }} apps, ${ui.caches.count { it.isProtected }} protected") }
@@ -94,6 +96,7 @@ fun TvClean(vm: OptimizeViewModel = hiltViewModel()) {
                 TvAction("Safe Boost", enabled = !ui.busy) { vm.boost() }
             }
         }
+        if (ui.busy) item { TvMuted(progress?.let { if (it.total > 0) "${it.label}: ${it.done} of ${it.total}" else it.label } ?: "Working") }
         ui.message?.let { m -> item { TvMuted(m) } }
         if (ui.caps?.usageAccess == false) item { TvMuted("Usage access is off. Enable it in system settings to measure cache.") }
         item { TvSection("Largest caches") }
@@ -200,6 +203,8 @@ fun TvSettings(vm: SettingsViewModel = hiltViewModel()) {
                 else -> TvRow("Check for updates", updateText(ui.update)) { vm.checkUpdates() }
             }
         }
+        item { TvSection("Diagnostics") }
+        item { val log = vm.diagnostics(); TvRow(if (log.isBlank()) "No errors recorded" else "Last error", log.takeLast(300).ifBlank { null }, if (log.isBlank()) null else "Clear") { vm.clearDiagnostics() } }
         item { TvSection("About") }
         item { TvMuted(LICENSES) }
     }

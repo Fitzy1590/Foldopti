@@ -69,10 +69,10 @@ object AccessibilityHolder { @Volatile var service: CacheClearAccessibilityServi
 class AccessibilityBridge @Inject constructor() {
     val connected: Boolean get() = AccessibilityHolder.service != null
 
-    suspend fun clearCaches(pkgs: List<String>): Set<String> {
+    suspend fun clearCaches(pkgs: List<String>, onProgress: (Int) -> Unit = {}): Set<String> {
         val svc = AccessibilityHolder.service ?: return emptySet()
         val done = mutableSetOf<String>()
-        for (p in pkgs) { if (svc.clearCache(p)) done += p else break }
+        for (p in pkgs) { if (svc.clearCache(p)) { done += p; onProgress(done.size) } else break }
         return done
     }
 }

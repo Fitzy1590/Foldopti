@@ -1,5 +1,6 @@
 package com.fitzy.foldopti
 
+import com.fitzy.foldopti.core.optimizer.*
 import com.fitzy.foldopti.core.whitelist.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
@@ -44,5 +45,20 @@ class GuardTest {
     @Test fun scannerNeverRemovesApps() {
         val src = File("src/main/java/com/fitzy/foldopti/core/security").walkTopDown().filter { it.extension == "kt" }.joinToString("\n") { it.readText() }
         listOf("disable-user", "uninstall", "deletePackage", "ACTION_DELETE", "force-stop").forEach { assertFalse(it, src.contains(it)) }
+    }
+}
+
+class SummaryTest {
+    private fun fmt(b: Long) = "${b}B"
+    @Test fun cleanSummaryExplainsFailures() {
+        val r = CleanResult(0, 0, 2, 5, Tier.T2, null, "Unknown option --cache-only").describe(::fmt)
+        assertTrue(r.any { it.contains("5 apps could not be cleared") && it.contains("Unknown option") }); assertTrue(r.any { it.contains("2 protected") })
+    }
+    @Test fun cleanSummaryReportsSuccessAndNotes() {
+        assertEquals(listOf("Cleared 100B from 1 app"), CleanResult(100, 1, 0, 0, Tier.T2, null).describe(::fmt))
+        assertEquals(listOf("Turn on Shizuku"), CleanResult(0, 0, 0, 0, Tier.T0, "Turn on Shizuku").describe(::fmt))
+    }
+    @Test fun boostSummary() {
+        assertTrue(BoostResult(listOf("a"), mapOf("b" to "x"), null).describe().first().contains("Restricted 1"))
     }
 }

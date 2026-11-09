@@ -54,17 +54,20 @@ class ShizukuShell @Inject constructor() {
             .apply { isAccessible = true }
     }
 
-    suspend fun exec(vararg cmd: String, stdin: InputStream? = null): ShellResult = withContext(Dispatchers.IO) {
+    suspend fun exec(vararg cmd: String, stdin: InputStream? = null, timeoutMs: Long = 20_000): ShellResult = withContext(Dispatchers.IO) {
         if (!ready) return@withContext ShellResult(-1, "", "Shizuku not ready")
+        var proc: Process? = null
         try {
             val p = newProcess.invoke(null, cmd, null, null) as Process
+            proc = p
             coroutineScope {
                 val out = async { p.inputStream.bufferedReader().readText() }
                 val err = async { p.errorStream.bufferedReader().readText() }
                 if (stdin != null) p.outputStream.use { stdin.copyTo(it) } else p.outputStream.close()
-                val code = p.waitFor()
-                ShellResult(code, out.await(), err.await())
+                if (!p.waitFor(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                    p.destroy(); ShellResult(-2, "", "Timed out after ${timeoutMs / 1000}s: ${cmd.joinToString(" ")}")
+                } else ShellResult(p.exitValue(), out.await(), err.await())
             }
-        } catch (t: Throwable) { ShellResult(-1, "", t.message ?: t.javaClass.simpleName) }
+        } catch (t: Throwable) { runCatching { proc?.destroy() }; ShellResult(-1, "", t.message ?: t.javaClass.simpleName) }
     }
 }

@@ -1,6 +1,7 @@
 package com.fitzy.foldopti.core.notifications
 
 import com.fitzy.foldopti.core.optimizer.OptimizerEngine
+import com.fitzy.foldopti.core.optimizer.describe
 import com.fitzy.foldopti.core.settings.SettingsStore
 import com.fitzy.foldopti.core.whitelist.WhitelistRepository
 import javax.inject.Inject
@@ -15,11 +16,9 @@ class ActionHandler @Inject constructor(
         val msg = when (action) {
             AlertAction.BOOST, AlertAction.COOL_DOWN -> {
                 val r = if (action == AlertAction.BOOST) engine.safeBoost() else engine.coolDown()
-                r.note ?: if (r.restricted.isEmpty()) "Nothing to restrict" else "Restricted ${r.restricted.size} idle apps"
+                r.describe().joinToString(". ")
             }
-            AlertAction.CLEAR_CACHE -> engine.cleanCaches().let { r ->
-                r.note ?: "Cleared ${fmt(r.clearedBytes)} from ${r.cleared} apps" + if (r.skipped > 0) ", ${r.skipped} protected" else ""
-            }
+            AlertAction.CLEAR_CACHE -> engine.cleanCaches().describe(::fmt).joinToString(". ")
             AlertAction.RESTRICT -> if (pkg != null && engine.restrict(pkg)) "Restricted $pkg" else "Could not restrict app (protected or Shizuku off)"
             AlertAction.WHITELIST -> { if (pkg != null) whitelist.add(pkg, "Added from alert"); "Protected ${pkg ?: "app"}" }
             AlertAction.SNOOZE -> { settings.snooze(if (pkg != null) "pkg:$pkg" else type.name, System.currentTimeMillis() + 2 * 3_600_000L); "Snoozed for 2 hours" }

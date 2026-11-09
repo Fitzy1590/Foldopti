@@ -29,13 +29,15 @@ fun OptimizeScreen(wide: Boolean, vm: OptimizeViewModel = hiltViewModel()) {
     val ctx = LocalContext.current
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { vm.load() }
     var confirm by remember { mutableStateOf<DormantApp?>(null) }
+    val progress by vm.progress.collectAsStateWithLifecycle()
 
     val left: LazyListScope.() -> Unit = {
         item { Title("Optimize") }
         item { UsageHint(ui) }
         item { CachePanel(ui, vm::clean) }
         item { BoostPanel(vm::boost, ui.busy) }
-        ui.message?.let { m -> item { Muted(m) } }
+        if (ui.busy && progress != null) item { Panel { ProgressBlock(progress) } }
+        ui.message?.let { m -> item { Panel { Muted(m) } } }
         item { SectionLabel("Developer tweaks") }
         items(ui.tweaks, key = { it.id }) { t ->
             Panel {

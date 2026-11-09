@@ -62,6 +62,10 @@ Voted scope: all features except **4d**. Build order: mobile first, then TV. Sid
 ## Release state
 v1.0.0 code complete on branch `ccr-4c4a9111-lmn2f5`. 21 unit tests, lint and R8 release build pass. Creating GitHub Releases is blocked in the cloud session, so a release APK must be built and published locally or by CI.
 
+## 1.0.1 fixes (from first device report)
+- Smart Clean and Optimize gave no progress or result, and the app crashed after Smart Clean. Added live progress (`OptimizerEngine.progress`), a result summary with the first shell error, 4-way parallel cache clearing, 20 s shell timeout, error capture in every ViewModel action, and Settings > Diagnostics (last crash and errors, copy button). Crash root cause not yet identified: reproduce and paste Diagnostics.
+- POST_NOTIFICATIONS was never requested on Android 13+, so no alert ever showed. Now requested at launch.
+
 ## Open items
 - Device pass (Stage 11): every [~] row above. Hidden-behavior risks: `pm clear --cache-only` (Android 12+ only, so unavailable on Shield Android 11), `dumpsys` parsers on Samsung/Shield builds, accessibility labels (English only), Samsung Device care package name, Shizuku `newProcess` reflection.
 - `assets/publishers.json` is empty (cert-mismatch rule inactive) and `signatures.bin` holds only the EICAR test hash. A real signature feed and key (`SIGNATURE_PUBKEY_B64`) are needed for 7c/7d to be useful.

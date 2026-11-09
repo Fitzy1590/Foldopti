@@ -113,6 +113,21 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
                 }
             }
         }
+        item { SectionLabel("Diagnostics") }
+        item {
+            var log by remember { mutableStateOf(vm.diagnostics()) }
+            val clip = androidx.compose.ui.platform.LocalClipboardManager.current
+            Panel {
+                if (log.isBlank()) Muted("No errors recorded") else {
+                    Muted("Last errors, newest at the bottom. Copy this when reporting a problem.")
+                    Mono(log.takeLast(1800))
+                    Row(horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
+                        SecondaryButton("Copy", { clip.setText(androidx.compose.ui.text.AnnotatedString(log)) })
+                        SecondaryButton("Clear", { vm.clearDiagnostics(); log = "" })
+                    }
+                }
+            }
+        }
         item { SectionLabel("About") }
         item { Panel { Muted(LICENSES) } }
     }

@@ -76,3 +76,12 @@ fun RowItem(title: String, subtitle: String? = null, trailing: @Composable (() -
 @Composable
 fun ToggleRow(title: String, subtitle: String?, checked: Boolean, onChecked: (Boolean) -> Unit) =
     RowItem(title, subtitle, trailing = { Switch(checked, onChecked) })
+
+@Composable
+fun ProgressBlock(p: com.fitzy.foldopti.core.optimizer.Progress?) {
+    Column(verticalArrangement = Arrangement.spacedBy(Space.x2)) {
+        if (p != null && p.total > 0) LinearProgressIndicator(progress = { p.done / p.total.toFloat() }, modifier = Modifier.fillMaxWidth())
+        else LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        Mono(if (p == null) "Working" else if (p.total > 0) "${p.label}: ${p.done} of ${p.total}" else p.label)
+    }
+}

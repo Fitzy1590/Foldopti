@@ -50,7 +50,16 @@ fun HomeScreen(wide: Boolean, tabletop: Boolean, vm: HomeViewModel = hiltViewMod
                 Stat("Cache", sum.cacheBytes?.let(::fmtBytes) ?: "n/a", if (sum.cacheBytes == null) "Usage access needed" else "in unprotected apps", Modifier.weight(1f))
             }
             PrimaryButton("Smart Clean", vm::smartClean, Modifier.fillMaxWidth(), busy = s.busy)
-            s.message?.let { Muted(it) }
+            if (s.busy) ProgressBlock(s.progress)
+            s.message?.let { Panel { Muted(it) } }
+            if (s.caps?.usageAccess == false) {
+                val ctx = androidx.compose.ui.platform.LocalContext.current
+                Panel {
+                    Text("Usage access is off", style = MaterialTheme.typography.titleMedium)
+                    Muted("Smart Clean can't measure cache without it.")
+                    SecondaryButton("Open usage access", { ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) })
+                }
+            }
             when (s.caps?.tier) {
                 Tier.T2 -> Mono("Mode: full (Shizuku)")
                 Tier.T1 -> Mono("Mode: accessibility, runs only while the screen is on")

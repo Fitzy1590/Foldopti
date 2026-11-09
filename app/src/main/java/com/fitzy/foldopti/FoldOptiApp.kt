@@ -26,6 +26,7 @@ class FoldOptiApp : Application(), Configuration.Provider {
 
     override fun onCreate() {
         super.onCreate()
+        com.fitzy.foldopti.core.system.CrashLog.install(this)
         Channels.create(this)
         shizuku.start()
         scheduler.ensureScheduled()

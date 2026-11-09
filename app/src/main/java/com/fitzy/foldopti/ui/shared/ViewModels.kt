@@ -27,9 +27,17 @@ import javax.inject.Inject
 
 fun fmtBytes(b: Long) = ActionHandler.fmt(b)
 
+/** Runs [block] in the ViewModel scope. Errors are logged to Diagnostics and reported through [onError] instead of crashing. */
+internal fun ViewModel.safeLaunch(where: String, onError: (String) -> Unit, block: suspend () -> Unit) = viewModelScope.launch {
+    try { block() } catch (c: kotlinx.coroutines.CancellationException) { throw c } catch (t: Throwable) {
+        com.fitzy.foldopti.core.system.CrashLog.record(where, t); onError("Something went wrong: ${t.message ?: t.javaClass.simpleName}. Details are in Settings > Diagnostics.")
+    }
+}
+
 data class HomeUi(
     val summary: ScanSummary = ScanSummary(), val caps: Capabilities? = null,
     val thermal: Int = 0, val headroom: Float? = null, val busy: Boolean = false, val message: String? = null,
+    val progress: Progress? = null,
 )
 
 @HiltViewModel
@@ -38,13 +46,13 @@ class HomeViewModel @Inject constructor(
     private val optimizer: OptimizerEngine, private val updates: UpdateRepository,
 ) : ViewModel() {
     private val local = MutableStateFlow(HomeUi())
-    val state: StateFlow<HomeUi> = combine(local, scan.last, thermal.status) { l, s, t -> l.copy(summary = s, thermal = t) }
+    val state: StateFlow<HomeUi> = combine(local, scan.last, thermal.status, optimizer.progress) { l, s, t, p -> l.copy(summary = s, thermal = t, progress = p) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), HomeUi())
 
     init { thermal.start(); viewModelScope.launch { updates.autoCheck() } }
     override fun onCleared() { thermal.stop() }
 
-    fun refresh() = viewModelScope.launch {
+    fun refresh() = safeLaunch("home.refresh", { m -> local.update { it.copy(busy = false, message = m) } }) {
         local.update { it.copy(busy = true, caps = capsMgr.current(), headroom = thermal.headroom()) }
         withContext(Dispatchers.Default) { scan.run() }
         local.update { it.copy(busy = false, headroom = thermal.headroom()) }
@@ -52,15 +60,16 @@ class HomeViewModel @Inject constructor(
 
     fun refreshCaps() { local.update { it.copy(caps = capsMgr.current(), headroom = thermal.headroom()) } }
 
-    fun smartClean() = viewModelScope.launch {
-        local.update { it.copy(busy = true, message = null) }
-        val c = optimizer.cleanCaches(); val b = optimizer.safeBoost()
-        val msg = listOfNotNull(
-            c.note ?: "Cleared ${fmtBytes(c.clearedBytes)} from ${c.cleared} apps" + if (c.skipped > 0) " (${c.skipped} protected)" else "",
-            b.note ?: if (b.restricted.isNotEmpty()) "Restricted ${b.restricted.size} idle apps" else null,
-        ).joinToString(". ")
-        local.update { it.copy(busy = false, message = msg) }
-        scan.run()
+    fun smartClean() {
+        if (local.value.busy) return
+        safeLaunch("home.smartClean", { m -> local.update { it.copy(busy = false, message = m) } }) {
+            local.update { it.copy(busy = true, message = null, caps = capsMgr.current()) }
+            val c = optimizer.cleanCaches()
+            val b = optimizer.safeBoost()
+            val lines = c.describe(::fmtBytes) + b.describe()
+            local.update { it.copy(busy = false, message = "Smart Clean finished\n" + lines.joinToString("\n")) }
+            runCatching { withContext(Dispatchers.Default) { scan.run() } }
+        }
     }
 }
 
@@ -77,37 +86,47 @@ class OptimizeViewModel @Inject constructor(
 ) : ViewModel() {
     private val _ui = MutableStateFlow(OptimizeUi())
     val ui: StateFlow<OptimizeUi> = _ui.asStateFlow()
+    val progress: StateFlow<Progress?> = optimizer.progress
 
-    fun load() = viewModelScope.launch {
+    private fun err(m: String) = _ui.update { it.copy(busy = false, message = m) }
+
+    fun load() = safeLaunch("optimize.load", ::err) {
         _ui.update { it.copy(busy = true) }
         val caches = optimizer.measureCache(); val dormant = dormancy.scan()
         _ui.update { it.copy(caches = caches, dormant = dormant, tweaks = tweaks.read(), caps = capsMgr.current(),
             disabled = withContext(Dispatchers.IO) { dormancy.disabledApps() }, busy = false, loaded = true) }
     }
 
-    fun clean(pkg: String? = null) = viewModelScope.launch {
-        _ui.update { it.copy(busy = true, message = null) }
-        val r = optimizer.cleanCaches(pkg?.let { listOf(it) })
-        _ui.update { it.copy(message = r.note ?: "Cleared ${fmtBytes(r.clearedBytes)} from ${r.cleared} apps" + if (r.failed > 0) ", ${r.failed} failed" else "") }
-        load()
+    fun clean(pkg: String? = null) {
+        if (_ui.value.busy) return
+        safeLaunch("optimize.clean", ::err) {
+            _ui.update { it.copy(busy = true, message = null) }
+            val r = optimizer.cleanCaches(pkg?.let { listOf(it) })
+            val lines = r.describe(::fmtBytes)
+            val caches = optimizer.measureCache()
+            _ui.update { it.copy(busy = false, caches = caches, message = "Clean finished\n" + lines.joinToString("\n")) }
+        }
     }
 
-    fun boost() = viewModelScope.launch {
-        _ui.update { it.copy(busy = true, message = null) }
-        val r = optimizer.safeBoost()
-        _ui.update { it.copy(busy = false, message = r.note ?: "Restricted ${r.restricted.size} idle apps, skipped ${r.skipped.size}") }
+    fun boost() {
+        if (_ui.value.busy) return
+        safeLaunch("optimize.boost", ::err) {
+            _ui.update { it.copy(busy = true, message = null) }
+            val r = optimizer.safeBoost()
+            _ui.update { it.copy(busy = false, message = "Safe Boost finished\n" + r.describe().joinToString("\n")) }
+        }
     }
 
-    fun applyTweak(id: String) = viewModelScope.launch { val ok = tweaks.apply(id); _ui.update { it.copy(message = if (ok) "Applied" else "Could not apply. Shizuku or secure settings access is needed.", tweaks = tweaks.read()) } }
-    fun revertTweak(id: String) = viewModelScope.launch { tweaks.revert(id); _ui.update { it.copy(message = "Reverted", tweaks = tweaks.read()) } }
+    fun applyTweak(id: String) = safeLaunch("tweak.apply", ::err) { val ok = tweaks.apply(id); _ui.update { it.copy(message = if (ok) "Applied" else "Could not apply. Shizuku or secure settings access is needed.", tweaks = tweaks.read()) } }
+    fun revertTweak(id: String) = safeLaunch("tweak.revert", ::err) { tweaks.revert(id); _ui.update { it.copy(message = "Reverted", tweaks = tweaks.read()) } }
     fun tweakIntent(id: String): Intent = tweaks.deepLink(id)
 
-    fun disable(pkg: String) = viewModelScope.launch {
+    fun disable(pkg: String) = safeLaunch("dormancy.disable", ::err) {
         val ok = dormancy.disable(pkg)
         _ui.update { it.copy(message = if (ok) "Disabled $pkg. You can re-enable it below." else "Could not disable. Shizuku is needed, and some apps are protected.") }
         load()
     }
-    fun enable(pkg: String) = viewModelScope.launch { dormancy.enable(pkg); load() }
+    fun enable(pkg: String) = safeLaunch("dormancy.enable", ::err) { dormancy.enable(pkg); load() }
     fun uninstallIntent(pkg: String) = dormancy.uninstallIntent(pkg)
     fun dismissMessage() = _ui.update { it.copy(message = null) }
 }
@@ -167,6 +186,9 @@ class SettingsViewModel @Inject constructor(
     fun usageAccessIntent() = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     fun accessibilityIntent() = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     fun notificationIntent() = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+    fun diagnostics(): String = com.fitzy.foldopti.core.system.CrashLog.read(ctx)
+    fun clearDiagnostics() = com.fitzy.foldopti.core.system.CrashLog.clear(ctx)
 
     fun checkUpdates() = viewModelScope.launch { updates.check() }
     fun downloadUpdate() = viewModelScope.launch { (updates.state.value as? UpdateState.Available)?.let { updates.download(it.release) } }
