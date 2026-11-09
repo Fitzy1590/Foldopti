@@ -191,17 +191,25 @@ class OptimizerEngine @Inject constructor(
 
     private companion object { const val MIN_CACHE_BYTES = 256L * 1024 }
 
+    /** How many packages FoldOpti has restricted and not yet reverted. */
+    fun restrictionCount(): Int = stopLog.allPackages().size
+
     /** Reverts every restriction FoldOpti has applied: background run back to default, standby bucket back to active. */
     suspend fun undoRestrictions(): Int {
         if (!shell.ready) return -1
+        val pkgs = stopLog.allPackages().toList()
         var n = 0
-        for (pkg in stopLog.allPackages()) {
-            val a = shell.exec("cmd", "appops", "set", pkg, "RUN_ANY_IN_BACKGROUND", "default")
-            shell.exec("am", "set-standby-bucket", pkg, "active")
-            if (a.ok) n++
-        }
-        com.fitzy.foldopti.core.system.CrashLog.note("AUDIT undo reverted $n: ${stopLog.allPackages().joinToString()}")
-        stopLog.clear(); return n
+        try {
+            pkgs.forEachIndexed { i, pkg ->
+                _progress.value = Progress("Reverting restrictions", i, pkgs.size, pkg)
+                val a = shell.exec("cmd", "appops", "set", pkg, "RUN_ANY_IN_BACKGROUND", "default")
+                shell.exec("am", "set-standby-bucket", pkg, "active")
+                if (a.ok) n++
+            }
+            com.fitzy.foldopti.core.system.CrashLog.note("AUDIT undo reverted $n of ${pkgs.size}: ${pkgs.joinToString()}")
+            stopLog.clear()
+        } finally { _progress.value = null }
+        return n
     }
 
     /** Cool down = Safe Boost now; scans pause while thermal status stays high (see ScanWorker). */

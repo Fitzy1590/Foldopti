@@ -34,10 +34,10 @@ fun OptimizeScreen(wide: Boolean, vm: OptimizeViewModel = hiltViewModel()) {
     val left: LazyListScope.() -> Unit = {
         item { Title("Optimize") }
         item { UsageHint(ui) }
+        if (ui.busy) item { Panel { ProgressBlock(progress, vm::cancel) } }
+        ui.message?.let { m -> item { Panel { Text("Result", style = MaterialTheme.typography.titleMedium); Muted(m); TextButton(vm::dismissMessage) { Text("Dismiss") } } } }
         item { CachePanel(ui, vm::clean) }
         item { BoostPanel(vm::boost, ui.busy, vm::undoBoost) }
-        if (ui.busy && progress != null) item { Panel { ProgressBlock(progress, vm::cancel) } }
-        ui.message?.let { m -> item { Panel { Muted(m) } } }
         item { SectionLabel("Developer tweaks") }
         items(ui.tweaks, key = { it.id }) { t ->
             Panel {

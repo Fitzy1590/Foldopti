@@ -119,9 +119,17 @@ class OptimizeViewModel @Inject constructor(
         }
     }
 
-    fun undoBoost() = safeLaunch("optimize.undo", ::err) {
-        val n = optimizer.undoRestrictions()
-        _ui.update { it.copy(message = if (n < 0) "Undo needs Shizuku running" else "Reverted restrictions on $n apps") }
+    fun undoBoost() {
+        if (_ui.value.busy) return
+        job = safeLaunch("optimize.undo", ::err) {
+            _ui.update { it.copy(busy = true, message = null) }
+            val recorded = optimizer.restrictionCount()
+            val msg = when {
+                recorded == 0 -> "Nothing to undo. FoldOpti has no background restrictions on record (they may already be reverted)."
+                else -> optimizer.undoRestrictions().let { n -> if (n < 0) "Undo needs Shizuku running. Start Shizuku and try again." else "Undo finished\nReverted background restrictions on $n of $recorded apps" }
+            }
+            _ui.update { it.copy(busy = false, message = msg) }
+        }
     }
 
     fun boost() {

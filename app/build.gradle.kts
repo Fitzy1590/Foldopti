@@ -14,8 +14,8 @@ android {
         applicationId = "com.fitzy.foldopti"
         minSdk = 30
         targetSdk = 35
-        versionCode = 6
-        versionName = "1.0.5"
+        versionCode = 7
+        versionName = "1.0.6"
         buildConfigField("String", "UPDATE_REPO", "\"Fitzy1590/Foldopti\"")
         // Base64 X.509 ECDSA public key for signature-DB updates (7d). Empty disables the download.
         buildConfigField("String", "SIGNATURE_PUBKEY_B64", "\"\"")
