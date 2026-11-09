@@ -8,7 +8,7 @@ Voted scope: all features except **4d**. Build order: mobile first, then TV. Sid
 | # | Stage | Contents | Status |
 |---|---|---|---|
 | 0 | Repo guardrails | CLAUDE.md, settings, rules, SPEC, this file | [x] |
-| 1 | Project scaffold | Gradle (Kotlin DSL, version catalog), `app` module, theme, design tokens, navigation shell, Hilt/Koin choice, Room, DataStore | [ ] |
+| 1 | Project scaffold | Gradle (Kotlin DSL, version catalog), `app` module, theme, design tokens, navigation shell, Hilt (chosen), Room, DataStore deps | [x] `assembleDebug`, `test`, `check` pass |
 | 2 | Core services | whitelist (6) + `WhitelistGuard`, capability tiers, `OptimizerBackend` + StatsBackend | [ ] |
 | 3 | Notifications | channels, PendingIntent builders, receivers, rate limit, alert thresholds | [ ] |
 | 4 | Optimizer | Shizuku backend, Accessibility backend, Safe Boost policy, loop guard | [ ] |
@@ -60,6 +60,7 @@ Voted scope: all features except **4d**. Build order: mobile first, then TV. Sid
 
 ## Open items
 - Verify hidden-API paths on a real Fold 6 and Shield: `deleteApplicationCacheFiles`, process limit, standby bucket commands.
-- Choose DI (Hilt vs Koin) and image/icon source in Stage 1.
+- Bundle Geist / IBM Plex Sans + Mono font files (system fonts used for now). Replace placeholder launcher icon and TV banner.
+- Build note: Maven Central rate-limits parallel Gradle in this sandbox; use `--max-workers=1 -Dorg.gradle.parallel=false`.
 - Create release signing key outside the repo; publish first GitHub Release so U1–U3 can be tested.
 - Keep unslop CC BY 4.0 credit in the in-app licenses screen.
