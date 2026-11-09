@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(**/*.jks)",
+      "Read(**/*.p12)",
+      "Read(**/*.keystore)",
+      "Read(signing/*.p12)",
+      "Read(./.env)",
+      "Read(./secrets/**)"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'if [ ! -x ./gradlew ]; then echo \"FoldOpti: no gradlew yet, skipping check\" 1>&2; elif [ -n \"$ANDROID_HOME\" ] || [ -f local.properties ]; then ./gradlew check 1>&2 || exit 2; else echo \"FoldOpti: no Android SDK detected (ANDROID_HOME / local.properties), skipping check\" 1>&2; fi'"
+          }
+        ]
+      }
+    ]
+  }
+}
