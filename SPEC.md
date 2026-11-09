@@ -22,7 +22,7 @@ Request `POST_NOTIFICATIONS` on first alert-worthy event, not at install.
 | Junk cache | measured cache at least 1 GB | Clear cache · Whitelist app |
 | Overheating | thermal status MODERATE: info heads-up; SEVERE or worse: critical heads-up | Cool down · Snooze |
 | Runaway process | one non-foreground app above 25% CPU for 3 scans | Restrict app · Whitelist · Never alert for this app |
-| Battery drain | one app above 20% of drain over 3 h | Restrict app · Whitelist |
+| Battery drain | one app has at least 60% of foreground time over 3 h, with at least 45 min total | Restrict app · Whitelist |
 **Rate limit**: one alert per type per 30 min; identical content updates the existing notification (stable ID per type); quiet hours (1d) and DND suppress non-critical alerts; snooze (1c) stores a `until` timestamp per type/app in DataStore.
 
 **PendingIntent payload builder** (`ActionIntents.kt`): `PendingIntent.getBroadcast(ctx, requestCode, intent, FLAG_IMMUTABLE or FLAG_UPDATE_CURRENT)`. Intent is explicit (`setClass(ctx, ActionReceiver::class.java)`), action constants `com.fitzy.foldopti.action.{BOOST,CLEAR_CACHE,COOL_DOWN,WHITELIST,SNOOZE,NEVER_ALERT}`, extras `pkg`, `alertId`, `schemaVersion`. requestCode = hash(action, pkg) so each button stays distinct.
@@ -32,7 +32,7 @@ Request `POST_NOTIFICATIONS` on first alert-worthy event, not at install.
 Interface `OptimizerBackend { measure(); clearCache(pkg); restrict(pkg); stop(pkg); capability }` with implementations `StatsBackend` (T0), `AccessibilityBackend` (T1), `ShizukuBackend` (T2). `BackendResolver` picks the highest available per call; no binders retained.
 
 **Measure**: `StorageStatsManager.queryStatsForPackage` per installed package (`PACKAGE_USAGE_STATS` special access required). Group into default, hidden (non-standard dirs under `Android/data/<pkg>`, only with T2 file access) and WebView caches (2d).
-**Clear (T2)**: Shizuku `ShizukuBinderWrapper` over `IPackageManager.deleteApplicationCacheFiles` per package [verify per OS version]; fallback `pm trim-caches <bytes>` for a global trim. **Never run `pm clear`.**
+**Clear (T2)**: `pm clear --cache-only <pkg>` through Shizuku, per package, **Android 12+ only** [verify]. On Android 11 (Shield) silent clearing is unavailable: `pm trim-caches` is global and would ignore the whitelist, so it is not used. A unit test fails the build if any `pm clear` call lacks `--cache-only`.
 **Clear (T1)**: `AccessibilityService` navigates App info → Storage → Clear cache. Foreground only (needs the screen), user-initiated only, never from notifications or WorkManager. Cancel on any user touch.
 **Safe Boost policy** (`BoostPolicy`), evaluated for each candidate in order; first match excludes it:
 1. whitelisted (user list, seeded defaults) 2. default launcher / IME / dialer / SMS / assistant 3. has a foreground service or active media session or active notification with `FLAG_ONGOING_EVENT` 4. system uid and not marked optional 5. stopped within the last 6 h (cooldown) 6. foreground app.
@@ -44,7 +44,7 @@ Remaining candidates: prefer **`am set-standby-bucket <pkg> restricted`** and ba
 - **Fold 6 rules** (3b): WindowManager `WindowInfoTracker` gives display state (cover vs inner). While on the cover screen and unplugged, scan interval is doubled; while charging at ≥ 80%, heavy scans (full cache measure, malware scan) are scheduled. Doze: no exact alarms; rely on WorkManager and `JobScheduler` windows. Deep link to battery optimization settings if the app is restricted.
 - **Shield thermal** (3c): `PowerManager.addThermalStatusListener` registered by the monitor service. MODERATE → info heads-up; SEVERE → critical heads-up + "Cool down" (stop whitelisted-exempt background candidates, pause scans); CRITICAL or worse → persistent alert until status < MODERATE. `getThermalHeadroom(30)` sampled every minute while MODERATE+ to show a trend on the TV UI. Hysteresis: need 2 min below a level before downgrading.
 - **Sustained Performance** (3d): `Window.setSustainedPerformanceMode(true)` is per-window and only affects FoldOpti's own activity. Provide it only as an in-app toggle labelled as such (see FEATURE_PROGRESS notes). Check `PowerManager.isSustainedPerformanceModeSupported()`.
-- **Battery drain attribution** (3e): `UsageStatsManager` + `BatteryManager` deltas; no per-app mAh claims unless reported by the OS, show "share of active time" instead.
+- **Battery drain attribution** (3e): `UsageStatsManager` foreground time share (`UsageShare`); no per-app mAh claims.
 
 ## 4. Developer options tweak scanner (`core/optimizer/tweaks/`)
 | Setting | Key / source | Recommended | Apply |
@@ -52,7 +52,7 @@ Remaining candidates: prefer **`am set-standby-bucket <pkg> restricted`** and ba
 | Window animation scale | `Settings.Global.WINDOW_ANIMATION_SCALE` | 0.5 | `Settings.Global.putFloat` (T2 or granted `WRITE_SECURE_SETTINGS`) |
 | Transition animation scale | `TRANSITION_ANIMATION_SCALE` | 0.5 | same |
 | Animator duration scale | `ANIMATOR_DURATION_SCALE` | 0.5 | same |
-| Background process limit | ActivityManager process limit [verify] | standard limit | T2 only, otherwise deep link to Developer options |
+| Background process limit | no public read API | standard limit | advisory only, deep link to Developer options |
 | Stay awake | `STAY_ON_WHILE_PLUGGED_IN` | 0 on TV idle, flag only | read-only recommendation |
 | App standby | `app_standby_enabled` | 1 | read-only |
 | Doze state | `dumpsys deviceidle` (T2) | informational | read-only |
@@ -62,13 +62,13 @@ Grant `WRITE_SECURE_SETTINGS` once via Shizuku (`pm grant`) when the user taps "
 
 ## 5. TV bloat and inactive apps (`ui/tv/`, `core/optimizer/dormancy/`)
 - `UsageStatsManager.queryEvents`/`queryAndAggregateUsageStats` → last foreground time per package; tiers 14/30/60 days (5a). Never-launched apps use `PackageInfo.firstInstallTime`.
-- Actions: **Disable** = `pm disable-user --user 0 <pkg>` (T2, default, reversible, with a "Disabled apps" screen to re-enable). **Uninstall** (5b) is a separate confirmed action via `PackageInstaller.uninstall`; user-uninstall only for non-system apps.
+- Actions: **Disable** (needs Shizuku) = `pm disable-user --user 0 <pkg>` (T2, default, reversible, with a "Disabled apps" screen to re-enable). **Uninstall** (5b) is a separate confirmed action via `PackageInstaller.uninstall`; user-uninstall only for non-system apps.
 - Built-in protected list (5c), always excluded: `com.google.android.tvlauncher`, the current default launcher, `com.google.android.katniss` (voice search), `com.nvidia.shieldtech.*`/GameStream components, `com.google.android.backdrop` (screensaver), `com.google.android.tv.*` core, `com.android.vending`, `com.plexapp.*` / `org.xbmc.kodi` suggested for whitelist.
 - Bloat view (5d): services running, standby bucket, last used, background activity; no live kill list.
 - Mobile reuse (5e): same engine, shown as "Unused apps" in the mobile Optimize tab.
 
 ## 6. Whitelist (`core/whitelist/`)
-Room table `protected_app(pkg PK, reason, addedAt, source{USER,DEFAULT,SUGGESTED})`. Seed on first launch: default launcher, IME, dialer, SMS, FoldOpti, Shizuku, and on TV the 5c list. Suggestions (6b): installed Plex, Kodi, WhatsApp, Signal, Telegram, Messages. Export/import (6c) as JSON via the Storage Access Framework. **Every engine calls `WhitelistGuard.assertAllowed(pkg, Action)` before acting; engines must not read the table directly.** Unit-tested for each action type.
+Room table `protected_app(pkg PK, reason, addedAt, source{USER,DEFAULT,SUGGESTED})`. Seed on first launch: default launcher, IME, dialer, SMS, FoldOpti, Shizuku, and on TV the 5c list. Suggestions (6b): installed Plex, Kodi, WhatsApp, Signal, Telegram, Messages. Export/import (6c) as JSON via the Storage Access Framework. **Every engine calls `WhitelistGuard.allows(pkg, Action)` / `assertAllowed` (core system, launcher and Shield packages are always protected via `ProtectedPackages`) before acting; engines must not read the table directly.** Unit-tested for each action type.
 
 ## 7. Malware and permission scanner (`core/security/`)
 Local only; no APK or package data leaves the device.

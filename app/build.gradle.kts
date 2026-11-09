@@ -15,7 +15,10 @@ android {
         minSdk = 30
         targetSdk = 35
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = "1.0.0"
+        buildConfigField("String", "UPDATE_REPO", "\"Fitzy1590/Foldopti\"")
+        // Base64 X.509 ECDSA public key for signature-DB updates (7d). Empty disables the download.
+        buildConfigField("String", "SIGNATURE_PUBKEY_B64", "\"\"")
     }
 
     buildTypes {
@@ -61,11 +64,14 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.shizuku.api)
+    implementation(libs.shizuku.provider)
     ksp(libs.hilt.compiler)
     ksp(libs.hilt.work.compiler)
     ksp(libs.room.compiler)
     debugImplementation(libs.compose.ui.tooling)
 
     testImplementation(libs.junit)
+    testImplementation(libs.json.test)
     testImplementation(libs.kotlinx.coroutines.test)
 }

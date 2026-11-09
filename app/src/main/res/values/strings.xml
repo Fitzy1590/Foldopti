@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">FoldOpti</string>
+    <string name="a11y_description">Opens Settings, then Storage, then Clear cache for one app at a time when you run Smart Clean. Only reads the Settings app.</string>
 </resources>
