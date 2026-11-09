@@ -35,7 +35,7 @@ fun OptimizeScreen(wide: Boolean, vm: OptimizeViewModel = hiltViewModel()) {
         item { Title("Optimize") }
         item { UsageHint(ui) }
         item { CachePanel(ui, vm::clean) }
-        item { BoostPanel(vm::boost, ui.busy) }
+        item { BoostPanel(vm::boost, ui.busy, vm::undoBoost) }
         if (ui.busy && progress != null) item { Panel { ProgressBlock(progress, vm::cancel) } }
         ui.message?.let { m -> item { Panel { Muted(m) } } }
         item { SectionLabel("Developer tweaks") }
@@ -118,10 +118,12 @@ private fun CachePanel(ui: OptimizeUi, clean: (String?) -> Unit) {
 }
 
 @Composable
-private fun BoostPanel(boost: () -> Unit, busy: Boolean) {
+private fun BoostPanel(boost: () -> Unit, busy: Boolean, undo: () -> Unit) {
     Panel {
         Text("Safe Boost", style = MaterialTheme.typography.titleMedium)
         Muted("Limits idle background apps. It skips media players, services in use, your keyboard and launcher, and protected apps. Nothing is force-stopped.")
+        Muted("Only ordinary apps you installed are limited, at most 15 per run. System, Samsung and Google services are never touched.")
         SecondaryButton("Run Safe Boost", boost, Modifier.fillMaxWidth(), enabled = !busy)
+        SecondaryButton("Undo Safe Boost", undo, Modifier.fillMaxWidth(), enabled = !busy)
     }
 }

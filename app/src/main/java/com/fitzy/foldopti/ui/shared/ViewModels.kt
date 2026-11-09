@@ -119,6 +119,11 @@ class OptimizeViewModel @Inject constructor(
         }
     }
 
+    fun undoBoost() = safeLaunch("optimize.undo", ::err) {
+        val n = optimizer.undoRestrictions()
+        _ui.update { it.copy(message = if (n < 0) "Undo needs Shizuku running" else "Reverted restrictions on $n apps") }
+    }
+
     fun boost() {
         if (_ui.value.busy) return
         job = safeLaunch("optimize.boost", ::err) {

@@ -66,6 +66,11 @@ v1.0.0 code complete on branch `ccr-4c4a9111-lmn2f5`. 21 unit tests, lint and R8
 - Smart Clean and Optimize gave no progress or result, and the app crashed after Smart Clean. Added live progress (`OptimizerEngine.progress`), a result summary with the first shell error, 4-way parallel cache clearing, 20 s shell timeout, error capture in every ViewModel action, and Settings > Diagnostics (last crash and errors, copy button). Crash root cause not yet identified: reproduce and paste Diagnostics.
 - POST_NOTIFICATIONS was never requested on Android 13+, so no alert ever showed. Now requested at launch.
 
+## 1.0.4 safety fix (device report: full phone crash, notification shade lost after running Smart Clean)
+- Cause (suspected, not confirmed): Safe Boost and cache clear could act on system, Samsung and OEM packages, including updated system apps and apps that provide Quick Settings tiles or other OS-bound services.
+- Fix: `SafetyPolicy` limits both engines to launcher-visible, ordinary apps; excludes OS/OEM prefixes and any app exposing a bound system service; caps 15 restrictions and 60 cache clears per run; one command at a time; confirm dialog before Smart Clean; Optimize > Undo Safe Boost reverts everything FoldOpti restricted.
+- Rule going forward: no feature may act on a package without passing `SafetyPolicy` and `WhitelistGuard`.
+
 ## Open items
 - Device pass (Stage 11): every [~] row above. Hidden-behavior risks: `pm clear --cache-only` (Android 12+ only, so unavailable on Shield Android 11), `dumpsys` parsers on Samsung/Shield builds, accessibility labels (English only), Samsung Device care package name, Shizuku `newProcess` reflection.
 - `assets/publishers.json` is empty (cert-mismatch rule inactive) and `signatures.bin` holds only the EICAR test hash. A real signature feed and key (`SIGNATURE_PUBKEY_B64`) are needed for 7c/7d to be useful.

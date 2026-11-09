@@ -69,7 +69,11 @@ class OptimizerEngine @Inject constructor(
         pm.getInstalledApplications(0).mapNotNull { ai ->
             val bytes = runCatching { ssm.queryStatsForPackage(ai.storageUuid, ai.packageName, user).cacheBytes }.getOrNull()
                 ?: return@mapNotNull null
-            if (bytes <= 0) null else AppCache(ai.packageName, ai.loadLabel(pm).toString(), bytes, !guard.allows(ai.packageName, CleanAction.CLEAR_CACHE))
+            if (bytes <= 0) null else {
+                val sys = ai.flags and ApplicationInfo.FLAG_SYSTEM != 0; val upd = ai.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP != 0
+                val safe = SafetyPolicy.canClearCache(ai.packageName, sys, upd, hasLauncher(ai.packageName))
+                AppCache(ai.packageName, ai.loadLabel(pm).toString(), bytes, !safe || !guard.allows(ai.packageName, CleanAction.CLEAR_CACHE))
+            }
         }.sortedByDescending { it.cacheBytes }
     }
 
@@ -80,7 +84,7 @@ class OptimizerEngine @Inject constructor(
             _progress.value = Progress("Measuring cache", 0, 0)
             val all = measureCache()
             val targets = all.filter { only == null || it.pkg in only }
-            val allowed = targets.filter { !it.isProtected && it.cacheBytes >= MIN_CACHE_BYTES }
+            val allowed = targets.filter { !it.isProtected && it.cacheBytes >= MIN_CACHE_BYTES }.take(SafetyPolicy.MAX_CACHE_CLEARS_PER_RUN)
             val skipped = targets.count { it.isProtected }
             if (allowed.isEmpty()) return CleanResult(0, 0, skipped, 0, tier,
                 if (!access.hasUsageAccess()) "Usage access is off, so cache size can't be measured. Turn it on in Settings." else "No cache worth clearing")
@@ -89,7 +93,7 @@ class OptimizerEngine @Inject constructor(
                     val done = java.util.concurrent.atomic.AtomicInteger(0); val ok = java.util.concurrent.atomic.AtomicInteger(0)
                     val failedLogged = java.util.concurrent.atomic.AtomicInteger(0); val bytes = java.util.concurrent.atomic.AtomicLong(0); val firstErr = java.util.concurrent.atomic.AtomicReference<String?>(null)
                     _progress.value = Progress("Clearing cache", 0, allowed.size)
-                    val sem = kotlinx.coroutines.sync.Semaphore(3)
+                    val sem = kotlinx.coroutines.sync.Semaphore(1)
                     kotlinx.coroutines.coroutineScope {
                         allowed.map { a -> async {
                             sem.withPermit {
@@ -124,6 +128,13 @@ class OptimizerEngine @Inject constructor(
         } finally { _progress.value = null }
     }
 
+    private fun hasLauncher(pkg: String) = pm.getLaunchIntentForPackage(pkg) != null || pm.getLeanbackLaunchIntentForPackage(pkg) != null
+
+    private fun exposesBoundService(pkg: String): Boolean = runCatching {
+        val pi = pm.getPackageInfo(pkg, android.content.pm.PackageManager.GET_SERVICES or android.content.pm.PackageManager.GET_RECEIVERS)
+        (pi.services.orEmpty().mapNotNull { it.permission } + pi.receivers.orEmpty().mapNotNull { it.permission }).any { it in SafetyPolicy.bindingPermissions }
+    }.getOrDefault(true)   // if we can't tell, treat as unsafe
+
     private fun roleApps(): Set<String> = buildSet {
         pm.resolveActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), 0)?.activityInfo?.packageName?.let(::add)
         Settings.Secure.getString(ctx.contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)?.substringBefore('/')?.let(::add)
@@ -143,7 +154,8 @@ class OptimizerEngine @Inject constructor(
             list.forEachIndexed { i, pkg ->
                 _progress.value = Progress("Restricting idle apps", i, list.size, pkg)
                 val ai = runCatching { pm.getApplicationInfo(pkg, 0) }.getOrNull() ?: return@forEachIndexed
-                val system = ai.flags and ApplicationInfo.FLAG_SYSTEM != 0 && ai.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP == 0
+                val system = !SafetyPolicy.canRestrict(pkg, ai.flags and ApplicationInfo.FLAG_SYSTEM != 0, hasLauncher(pkg), exposesBoundService(pkg))
+                if (done.size >= SafetyPolicy.MAX_RESTRICTIONS_PER_RUN) { skipped[pkg] = "Limit per run"; return@forEachIndexed }
                 val d = BoostPolicy.decide(
                     Candidate(pkg, !guard.allows(pkg, CleanAction.RESTRICT) || ProtectedPackages.isCore(pkg), pkg in roles,
                         pkg in snap.foregroundServices, pkg in snap.mediaSessions, system, pkg in snap.topApp, stopLog.history(pkg, now)), now)
@@ -164,18 +176,30 @@ class OptimizerEngine @Inject constructor(
     }
 
     suspend fun restrict(pkg: String): Boolean {
-        if (!guard.allows(pkg, CleanAction.RESTRICT) || !shell.ready) return false
+        if (!guard.allows(pkg, CleanAction.RESTRICT) || SafetyPolicy.isSystemCritical(pkg) || !shell.ready) return false
         val ok = restrictInternal(pkg); if (ok) stopLog.record(pkg); return ok
     }
 
     /** Last resort for runaway processes only (alert action). Honors whitelist and cooldown. */
     suspend fun forceStop(pkg: String): Boolean {
-        if (!guard.allows(pkg, CleanAction.STOP) || !shell.ready) return false
+        if (!guard.allows(pkg, CleanAction.STOP) || SafetyPolicy.isSystemCritical(pkg) || !shell.ready) return false
         if (stopLog.history(pkg).any { System.currentTimeMillis() - it < BoostPolicy.COOLDOWN_MS }) return false
         val ok = shell.exec("am", "force-stop", pkg).ok; if (ok) stopLog.record(pkg); return ok
     }
 
     private companion object { const val MIN_CACHE_BYTES = 256L * 1024 }
+
+    /** Reverts every restriction FoldOpti has applied: background run back to default, standby bucket back to active. */
+    suspend fun undoRestrictions(): Int {
+        if (!shell.ready) return -1
+        var n = 0
+        for (pkg in stopLog.allPackages()) {
+            val a = shell.exec("cmd", "appops", "set", pkg, "RUN_ANY_IN_BACKGROUND", "default")
+            shell.exec("am", "set-standby-bucket", pkg, "active")
+            if (a.ok) n++
+        }
+        stopLog.clear(); return n
+    }
 
     /** Cool down = Safe Boost now; scans pause while thermal status stays high (see ScanWorker). */
     suspend fun coolDown(): BoostResult = safeBoost()

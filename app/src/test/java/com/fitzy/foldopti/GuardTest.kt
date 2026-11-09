@@ -62,3 +62,25 @@ class SummaryTest {
         assertTrue(BoostResult(listOf("a"), mapOf("b" to "x"), null).describe().first().contains("Restricted 1"))
     }
 }
+
+class SafetyPolicyTest {
+    @Test fun systemAndOemPackagesAreNeverTouched() {
+        listOf("com.android.systemui", "com.samsung.android.app.quickpanel", "com.sec.android.app.launcher", "com.google.android.gms",
+            "com.qualcomm.qti.services", "android", "com.nvidia.shieldtech.hub", "com.samsung.systemui.lockstar").forEach { assertTrue(it, SafetyPolicy.isSystemCritical(it)) }
+        assertFalse(SafetyPolicy.isSystemCritical("com.android.chrome")); assertFalse(SafetyPolicy.isSystemCritical("com.facebook.katana"))
+    }
+    @Test fun cacheClearRules() {
+        assertTrue(SafetyPolicy.canClearCache("com.android.chrome", isSystem = true, isUpdatedSystem = true, hasLauncher = true))
+        assertTrue(SafetyPolicy.canClearCache("com.facebook.katana", false, false, true))
+        assertFalse(SafetyPolicy.canClearCache("com.facebook.katana", false, false, false))        // no launcher icon
+        assertFalse(SafetyPolicy.canClearCache("com.some.preinstalled", true, false, true))         // pure system app
+        assertFalse(SafetyPolicy.canClearCache("com.samsung.android.app.spage", true, true, true))  // OEM layer
+    }
+    @Test fun restrictRules() {
+        assertTrue(SafetyPolicy.canRestrict("com.facebook.katana", isSystem = false, hasLauncher = true, exposesBoundService = false))
+        assertFalse(SafetyPolicy.canRestrict("com.android.chrome", true, true, false))              // system flag, even if updated
+        assertFalse(SafetyPolicy.canRestrict("com.thirdparty.tiles", false, true, true))            // quick settings tile / listener / IME
+        assertFalse(SafetyPolicy.canRestrict("com.thirdparty.x", false, false, false))              // no launcher icon
+        assertTrue("android.permission.BIND_QUICK_SETTINGS_TILE" in SafetyPolicy.bindingPermissions)
+    }
+}
